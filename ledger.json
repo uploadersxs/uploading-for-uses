@@ -1,0 +1,11 @@
+{
+  "source": "verity_obfuscator.zip",
+  "capabilities": [
+    {"capability":"Lua/Luau obfuscation engine","source":"src/obfuscator.lua","outcome":"Run original source in a browser worker with Lua WASM","status":"pending","next_action":"Verify all three profiles with real input"},
+    {"capability":"CLI file input/output","source":"obfuscate.lua","outcome":"Browser upload and download","status":"pending","next_action":"Verify upload and output download"},
+    {"capability":"Settings, statistics and debug maps","source":"obfuscate.lua","outcome":"Web settings and JSON downloads","status":"pending","next_action":"Verify output statistics"},
+    {"capability":"Recursive CLI batch processing","source":"obfuscate.lua","outcome":"Original CLI remains in source; web interface handles individual files","status":"retained","next_action":"Report browser single-file scope"},
+    {"capability":"Schema, records, auth identities, authorization and uploaded storage","source":"No application data store or auth detected in Lua library","outcome":"Not applicable","status":"not_applicable","next_action":null},
+    {"capability":"Providers, secrets, public endpoints, callbacks, webhooks, schedules and cutover","source":"Standalone Lua host tool with Luau output","outcome":"Not applicable","status":"not_applicable","next_action":null}
+  ]
+}
