@@ -1,0 +1,80 @@
+package.path='./?.lua;'..package.path
+local obfuscator=require('src.obfuscator')
+local util=require('src.util')
+dofile('tests/test_codec.lua')
+dofile('tests/test_minify.lua')
+dofile('tests/test_base91.lua')
+dofile('tests/test_wire.lua')
+local cipher=require('src.cipher')
+local cipherSample=string.rep('feedback\0cipher\255',1000)
+local cipherConfig={key=2147483646,multiplier=100000}
+assert(cipher.crypt(cipher.crypt(cipherSample,cipherConfig),cipherConfig,true)==cipherSample,'cipher roundtrip')
+local source=util.read('tests/fixtures/core.luau')
+local first,stats=obfuscator.obfuscate(source,{seed=12345})
+local second=obfuscator.obfuscate(source,{seed=12345})
+local third=obfuscator.obfuscate(source,{seed=12346})
+assert(first==second,'same seed must reproduce output')
+assert(first~=third,'different seeds must diversify output')
+assert(stats.opaque>0 and stats.junk>0 and stats.blocks>0)
+assert(first:sub(1,#obfuscator.watermark)==obfuscator.watermark,'exact first-line watermark')
+local _,lines=first:gsub('\n','')
+assert(lines==2,'default output must have watermark and one code line')
+assert(stats.dispatcher=='BST' and stats.opcodeAliases>=60,'randomized BST aliases')
+assert(stats.handlerLeaves<stats.opcodeAliases,'aliases should share handler leaves')
+assert(stats.mainPacked and stats.main.layers==2,'main must be VM packed')
+assert(stats.transport=='base91' and stats.main.transport=='base91','both layers must use base91')
+assert(first:find('VERITY_',1,true),'visible bytecode signature required')
+assert(not first:find('OVM:',1,true),'runtime diagnostic strings must be absent')
+local base91=require('src.base91')
+assert(not first:find(base91.alphabet(stats.main.alphabetSeed),1,true),'alphabet must not be a literal')
+assert(stats.compressedBytes<=stats.payloadBytes,'adaptive compression must not grow the payload')
+assert(stats.compressionApplied==(stats.compressedBytes<stats.payloadBytes),'compression choice must match its measured size')
+assert(not first:find('core OK',1,true),'source strings should be encoded')
+assert(not first:find('loadstring',1,true),'no source evaluation')
+assert(first:find('buffer',1,true),'buffer VM expected')
+for _,bad in ipairs({0,-1,2147483647,1.5,'abc',false}) do
+    assert(not pcall(obfuscator.obfuscate,'return 1',{seed=bad}))
+end
+assert(not pcall(obfuscator.obfuscate,'return 1',{junk=2}))
+assert(not pcall(obfuscator.obfuscate,'local = 1',{seed=1}))
+for _,badSource in ipairs({'break','continue','local f=function() return ... end'}) do
+    assert(not pcall(obfuscator.obfuscate,badSource,{seed=1}), 'invalid/unsupported source must fail')
+end
+for _,badSource in ipairs({'const x=1; x=2','const x=1; x+=1','const x=1; local f=function() x=2 end'}) do
+    assert(not pcall(obfuscator.obfuscate,badSource,{seed=1}),'const writes must fail')
+end
+assert(util.absolute('tests/.generated/../.generated/input.luau')==util.absolute('tests/.generated/input.luau'))
+assert(stats.outputBytes==#first)
+for _,seed in ipairs({1,12345,2147483646}) do
+    for _,name in ipairs({'core','loops','luau','runtime','evaluation','numbers','advanced','interpolation','types','minify','optimizer'}) do
+        local code=util.read('tests/fixtures/'..name..'.luau')
+        local out=obfuscator.obfuscate(code,{seed=seed})
+        util.write('tests/.generated/'..name..'_'..seed..'.luau',out)
+    end
+end
+local plain=obfuscator.obfuscate(source,{seed=1,cff=false,opaque=false,junk=0,minify=false,compression=false,main=false})
+util.write('tests/.generated/core_plain.luau',plain)
+local literal=obfuscator.obfuscate('assert(6*7==42); print("literal OK")',{seed=1,transport='literal',main=false})
+util.write('tests/.generated/literal.luau',literal)
+local args=obfuscator.obfuscate('local args=table.pack(...); assert(args.n==2 and args[1]=="alpha" and args[2]=="beta"); print("args OK")',{seed=12345})
+util.write('tests/.generated/main_args.luau',args)
+local parser=require('src.parser')
+local compiler=require('src.compiler')
+local serialize=require('src.serialize')
+local runtime=require('src.runtime')
+local rng=util.rng(99)
+local opcodes=serialize.opcodes(rng)
+local payload,checksum=serialize.encode(compiler.compile(parser.parse('return 1')),opcodes,99)
+payload=string.char((payload:byte(1)+1)%256)..payload:sub(2)
+util.write('tests/.generated/corrupt.luau',runtime.render({payload=payload,checksum=checksum,seed=99,opcodes=opcodes}))
+local wireCipher={key=999,multiplier=16807}
+local wire=serialize.encode(compiler.compile(parser.parse('return 1')),opcodes,99,{cipher=wireCipher})
+wire=cipher.crypt(wire,wireCipher,true)
+assert(wire:sub(1,7)=='VERITY_' and wire:byte(8)==1,'decoded bytecode signature/version')
+local locale=os.setlocale(nil,'numeric')
+if os.setlocale('German_Germany.1252','numeric') or os.setlocale('de_DE.UTF-8','numeric') then
+    local decimal=obfuscator.obfuscate('assert(1.25+0.5==1.75); print("locale OK")',{seed=12345})
+    util.write('tests/.generated/locale.luau',decimal)
+    os.setlocale(locale,'numeric')
+end
+print('Host checks OK')

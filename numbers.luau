@@ -1,0 +1,12 @@
+-- Luau uses doubles and saturates overflowing base-2/base-16 literals at uint64.
+assert(9007199254740993==9007199254740992)
+assert(0x20000000000001==9007199254740992)
+assert(0xffffffffffffffff==18446744073709551616)
+assert(0xffffffffffffffffffffffffffffffff==18446744073709551616)
+assert(0b11111111111111111111111111111111111111111111111111111111111111111==18446744073709551616)
+assert(string.format('%.17g',0x2000000000000101)=='2.3058430092136945e+18')
+assert(1e999==math.huge)
+assert(1e-999==0)
+assert(1/(-0)==-math.huge)
+assert(0.125+0.25==0.375)
+print('numbers OK')
